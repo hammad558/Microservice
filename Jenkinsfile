@@ -2,31 +2,42 @@ pipeline {
     agent any
 
     environment {
-        K8S_TOKEN = credentials('k8-token')  // Secret Text in Jenkins
+        // Jenkins credentials: one Secret Text, one Secret File
+        K8S_TOKEN  = credentials('k8-token')   // secret text from `kubectl get secret ... | base64 --decode`
+        K8S_CA     = credentials('k8-ca')      // secret file from `ca.crt` contents
         K8S_SERVER = 'https://5765636A4E6AE385683ED1AA12D36B5C.gr7.us-east-1.eks.amazonaws.com'
-        K8S_NAMESPACE = 'webapps'
+        K8S_NS     = 'webapps'
     }
 
     stages {
         stage('Deploy To Kubernetes') {
             steps {
-                sh """
-                    kubectl --token="${K8S_TOKEN}" \
-                            --server=${K8S_SERVER} \
-                            --insecure-skip-tls-verify=true \
-                            apply -f deployment-service.yml -n ${K8S_NAMESPACE}
-                """
+                script {
+                    // Save CA cert file
+                    writeFile file: 'ca.crt', text: K8S_CA
+
+                    sh """
+                        kubectl --token="${K8S_TOKEN}" \
+                                --server=${K8S_SERVER} \
+                                --certificate-authority=ca.crt \
+                                --namespace=${K8S_NS} \
+                                apply -f deployment-service.yml
+                    """
+                }
             }
         }
 
         stage('Verify Deployment') {
             steps {
-                sh """
-                    kubectl --token="${K8S_TOKEN}" \
-                            --server=${K8S_SERVER} \
-                            --insecure-skip-tls-verify=true \
-                            get svc -n ${K8S_NAMESPACE}
-                """
+                script {
+                    sh """
+                        kubectl --token="${K8S_TOKEN}" \
+                                --server=${K8S_SERVER} \
+                                --certificate-authority=ca.crt \
+                                --namespace=${K8S_NS} \
+                                get svc
+                    """
+                }
             }
         }
     }
