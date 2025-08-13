@@ -5,7 +5,7 @@ pipeline {
         stage('Deploy To Kubernetes') {
             steps {
                 withCredentials([
-                    string(credentialsId: 'k8s-ca-text', variable: 'K8S_CA_TEXT'),
+                    string(credentialsId: 'k8s-ca', variable: 'K8S_CA_TEXT'),
                     string(credentialsId: 'k8-token', variable: 'K8S_TOKEN')
                 ]) {
                     sh '''
@@ -25,7 +25,7 @@ pipeline {
         stage('Verify Deployment') {
             steps {
                 withCredentials([
-                    string(credentialsId: 'k8s-ca-text', variable: 'K8S_CA_TEXT'),
+                    string(credentialsId: 'k8s-ca', variable: 'K8S_CA_TEXT'),
                     string(credentialsId: 'k8-token', variable: 'K8S_TOKEN')
                 ]) {
                     sh '''
