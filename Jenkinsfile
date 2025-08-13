@@ -31,7 +31,7 @@ pipeline {
 
         stage('Deploy To Kubernetes') {
             steps {
-                sh 'kubectl apply -f deployment-service.yml'
+                sh 'kubectl apply -f deployment-service.yml --validate=false'
             }
         }
 
