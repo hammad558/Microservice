@@ -1,25 +1,15 @@
 pipeline {
     agent any
-
+    
     environment {
-        KUBE_SERVER = 'https://5765636A4E6AE385683ED1AA12D36B5C.gr7.us-east-1.eks.amazonaws.com'
-        KUBE_NAMESPACE = 'webapps'
+        KUBE_SERVER     = 'https://5765636A4E6AE385683ED1AA12D36B5C.gr7.us-east-1.eks.amazonaws.com'
+        KUBE_NAMESPACE  = 'webapps'
     }
 
     stages {
-
         stage('Checkout Code') {
             steps {
-                checkout([
-                    $class: 'GitSCM',
-                    branches: [[name: '*/main']],
-                    doGenerateSubmoduleConfigurations: false,
-                    extensions: [],
-                    userRemoteConfigs: [[
-                        url: 'https://github.com/hammad558/Microservice.git',
-                        credentialsId: 'git-cred'
-                    ]]
-                ])
+                git branch: 'main', credentialsId: 'git-cred', url: 'https://github.com/hammad558/Microservice.git'
             }
         }
 
@@ -30,11 +20,25 @@ pipeline {
                     string(credentialsId: 'k8-token', variable: 'K8S_TOKEN')
                 ]) {
                     sh '''
-                        echo "$K8S_CA_TEXT" > ca.crt
-                        kubectl --token=$K8S_TOKEN \
-                                --server=$KUBE_SERVER \
+                        # Create CA file
+                        if echo "$K8S_CA_TEXT" | grep -q "BEGIN CERTIFICATE"; then
+                            # Plain PEM format
+                            printf "%s" "$K8S_CA_TEXT" > ca.crt
+                        else
+                            # Base64 encoded format
+                            echo "$K8S_CA_TEXT" | base64 -d > ca.crt
+                        fi
+
+                        # Validate CA file
+                        echo "Validating CA certificate..."
+                        openssl x509 -in ca.crt -noout -text || { echo "Invalid CA cert"; exit 1; }
+
+                        # Apply Kubernetes manifests
+                        kubectl --token="$K8S_TOKEN" \
+                                --server="$KUBE_SERVER" \
                                 --certificate-authority=ca.crt \
-                                --namespace=$KUBE_NAMESPACE apply -f deployment-service.yml
+                                --namespace="$KUBE_NAMESPACE" \
+                                apply -f deployment-service.yml
                     '''
                 }
             }
@@ -42,28 +46,23 @@ pipeline {
 
         stage('Verify Deployment') {
             steps {
-                withCredentials([
-                    string(credentialsId: 'k8-ca', variable: 'K8S_CA_TEXT'),
-                    string(credentialsId: 'k8-token', variable: 'K8S_TOKEN')
-                ]) {
-                    sh '''
-                        echo "$K8S_CA_TEXT" > ca.crt
-                        kubectl --token=$K8S_TOKEN \
-                                --server=$KUBE_SERVER \
-                                --certificate-authority=ca.crt \
-                                --namespace=$KUBE_NAMESPACE get pods
-                    '''
-                }
+                sh '''
+                    kubectl --token="$K8S_TOKEN" \
+                            --server="$KUBE_SERVER" \
+                            --certificate-authority=ca.crt \
+                            --namespace="$KUBE_NAMESPACE" \
+                            get pods -o wide
+                '''
             }
         }
     }
 
     post {
-        success {
-            echo 'Deployment succeeded!'
-        }
         failure {
             echo 'Deployment failed.'
+        }
+        success {
+            echo 'Deployment completed successfully.'
         }
     }
 }
