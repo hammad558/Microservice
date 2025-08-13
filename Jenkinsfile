@@ -20,17 +20,20 @@ pipeline {
                     string(credentialsId: 'k8-token', variable: 'K8S_TOKEN')
                 ]) {
                     sh '''
-                        # Create CA file
+                        # Avoid echoing secrets to console
+                        set +x
+
+                        # Create CA file without masking issues
                         if echo "$K8S_CA_TEXT" | grep -q "BEGIN CERTIFICATE"; then
-                            # Plain PEM format
                             printf "%s" "$K8S_CA_TEXT" > ca.crt
                         else
-                            # Base64 encoded format
                             echo "$K8S_CA_TEXT" | base64 -d > ca.crt
                         fi
 
+                        # Restore debug
+                        set -x
+
                         # Validate CA file
-                        echo "Validating CA certificate..."
                         openssl x509 -in ca.crt -noout -text || { echo "Invalid CA cert"; exit 1; }
 
                         # Apply Kubernetes manifests
