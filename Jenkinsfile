@@ -1,7 +1,28 @@
 pipeline {
     agent any
 
+    environment {
+        KUBE_SERVER = 'https://5765636A4E6AE385683ED1AA12D36B5C.gr7.us-east-1.eks.amazonaws.com'
+        KUBE_NAMESPACE = 'webapps'
+    }
+
     stages {
+
+        stage('Checkout Code') {
+            steps {
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: '*/main']],
+                    doGenerateSubmoduleConfigurations: false,
+                    extensions: [],
+                    userRemoteConfigs: [[
+                        url: 'https://github.com/hammad558/Microservice.git',
+                        credentialsId: 'git-cred'
+                    ]]
+                ])
+            }
+        }
+
         stage('Deploy To Kubernetes') {
             steps {
                 withCredentials([
@@ -9,14 +30,11 @@ pipeline {
                     string(credentialsId: 'k8-token', variable: 'K8S_TOKEN')
                 ]) {
                     sh '''
-                        # Write CA text to file
                         echo "$K8S_CA_TEXT" > ca.crt
-
-                        # Apply deployment
                         kubectl --token=$K8S_TOKEN \
-                                --server=https://5765636A4E6AE385683ED1AA12D36B5C.gr7.us-east-1.eks.amazonaws.com \
+                                --server=$KUBE_SERVER \
                                 --certificate-authority=ca.crt \
-                                --namespace=webapps apply -f deployment-service.yml
+                                --namespace=$KUBE_NAMESPACE apply -f deployment-service.yml
                     '''
                 }
             }
@@ -31,12 +49,21 @@ pipeline {
                     sh '''
                         echo "$K8S_CA_TEXT" > ca.crt
                         kubectl --token=$K8S_TOKEN \
-                                --server=https://5765636A4E6AE385683ED1AA12D36B5C.gr7.us-east-1.eks.amazonaws.com \
+                                --server=$KUBE_SERVER \
                                 --certificate-authority=ca.crt \
-                                --namespace=webapps get svc
+                                --namespace=$KUBE_NAMESPACE get pods
                     '''
                 }
             }
+        }
+    }
+
+    post {
+        success {
+            echo 'Deployment succeeded!'
+        }
+        failure {
+            echo 'Deployment failed.'
         }
     }
 }
