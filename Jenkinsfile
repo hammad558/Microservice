@@ -1,61 +1,48 @@
 pipeline {
     agent any
-    
+
     environment {
-        KUBE_SERVER     = 'https://5765636A4E6AE385683ED1AA12D36B5C.gr7.us-east-1.eks.amazonaws.com'
-        KUBE_NAMESPACE  = 'webapps'
+        K8S_SERVER = 'https://<your-cluster-endpoint>'  // from AWS EKS or kubeconfig
+        NAMESPACE  = 'webapps'
     }
 
     stages {
         stage('Checkout Code') {
             steps {
-                git branch: 'main', credentialsId: 'git-cred', url: 'https://github.com/hammad558/Microservice.git'
+                git branch: 'main',
+                    credentialsId: 'git-cred',
+                    url: 'https://github.com/hammad558/Microservice.git'
             }
         }
 
         stage('Deploy To Kubernetes') {
             steps {
                 withCredentials([
-                    string(credentialsId: 'k8-ca', variable: 'K8S_CA_TEXT'),
-                    string(credentialsId: 'k8-token', variable: 'K8S_TOKEN')
+                    string(credentialsId: 'k8-token', variable: 'K8S_TOKEN'),
+                    string(credentialsId: 'k8-ca', variable: 'K8S_CA_TEXT')
                 ]) {
                     sh '''
-                        # Avoid echoing secrets to console
-                        set +x
+                        echo "$K8S_CA_TEXT" > ca.crt
+                        echo "CA cert written to file."
 
-                        # Create CA file without masking issues
-                        if echo "$K8S_CA_TEXT" | grep -q "BEGIN CERTIFICATE"; then
-                            printf "%s" "$K8S_CA_TEXT" > ca.crt
-                        else
-                            echo "$K8S_CA_TEXT" | base64 -d > ca.crt
-                        fi
+                        kubectl config set-cluster my-cluster \
+                          --server=$K8S_SERVER \
+                          --certificate-authority=ca.crt \
+                          --embed-certs=true
 
-                        # Restore debug
-                        set -x
+                        kubectl config set-credentials jenkins-sa \
+                          --token=$K8S_TOKEN
 
-                        # Validate CA file
-                        openssl x509 -in ca.crt -noout -text || { echo "Invalid CA cert"; exit 1; }
+                        kubectl config set-context my-context \
+                          --cluster=my-cluster \
+                          --namespace=$NAMESPACE \
+                          --user=jenkins-sa
 
-                        # Apply Kubernetes manifests
-                        kubectl --token="$K8S_TOKEN" \
-                                --server="$KUBE_SERVER" \
-                                --certificate-authority=ca.crt \
-                                --namespace="$KUBE_NAMESPACE" \
-                                apply -f deployment-service.yml
+                        kubectl config use-context my-context
+
+                        kubectl get pods
                     '''
                 }
-            }
-        }
-
-        stage('Verify Deployment') {
-            steps {
-                sh '''
-                    kubectl --token="$K8S_TOKEN" \
-                            --server="$KUBE_SERVER" \
-                            --certificate-authority=ca.crt \
-                            --namespace="$KUBE_NAMESPACE" \
-                            get pods -o wide
-                '''
             }
         }
     }
@@ -63,9 +50,6 @@ pipeline {
     post {
         failure {
             echo 'Deployment failed.'
-        }
-        success {
-            echo 'Deployment completed successfully.'
         }
     }
 }
